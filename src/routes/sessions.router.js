@@ -1,12 +1,14 @@
 import { Router } from "express";
-import { registerController, loginController, logoutController, currentController } from "../controllers/sessions.controller.js";
-import { ensureSession } from "../middlewares/session.midlewars.js";
+import { registerController, loginController, logoutController,  currentController } from "../controllers/sessions.controller.js";
+import passport from "passport";
+
 const router = Router();
 
-router.post("/register", registerController);
-router.post("/login", loginController);
+router.post("/register", passport.authenticate("register", { session: false }), registerController);
+router.post("/login", passport.authenticate("login", { session: false }), loginController);
 
+router.get("/current", passport.authenticate("current", { session: false }), currentController);
 
-router.get("/current", ensureSession, currentController);
 router.delete("/logout", logoutController);
+
 export default router;

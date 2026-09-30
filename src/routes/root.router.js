@@ -4,4 +4,5 @@ const router = Router();
 
 router.get("/health", healthStatus);
 
+
 export default router;

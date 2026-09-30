@@ -32,10 +32,10 @@ export async function registerUser (userData) {
         first_name: firstName, 
         last_name: lastName, 
         email, 
-        password: hashedPassword, // Asegúrate de tener una función para hashear la contraseña
+        password: hashedPassword,
         role: "user"
     });
-    //Responder al controler    
+    
     
     const userResponse = newUser.toObject();
     delete userResponse.password;

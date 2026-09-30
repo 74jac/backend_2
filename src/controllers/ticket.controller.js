@@ -1,3 +1,6 @@
+import { ticketModel } from "../models/ticket.model.js"
+
+
 export async function getAll(req, res, next){
 try {
     
@@ -18,7 +21,10 @@ try {
 
 export async function purchaseTicket(req, res, next){
 try {
-    
+    const{eid, uid} = req.params;
+
+    const newTicket = await ticketModel.create({event: eid, user: uid});
+    res.status(200).json({messaje: "success", newTicket});
 } catch (error) {
     console.log(error);
 }
