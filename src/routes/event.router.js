@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getAll, createEvent, getById, updateEvent, deleteEvent } from "../controllers/event.controller.js";
 import passport from "passport";
-import { rolesPermition } from "../middlewares/session.middleware.js";
+import { rolesPermition } from "../middlewares/authorize.middleware.js";
 
 const router = Router();
 

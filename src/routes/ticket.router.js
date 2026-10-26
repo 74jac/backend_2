@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getAll, getById, purchaseTicket } from "../controllers/ticket.controller.js";
 import passport from "passport";
-import { ticketPermition } from "../middlewares/session.middleware.js";
+import { ticketPermition } from "../middlewares/authorize.middleware.js";
 const router = Router();
 
 router.use(passport.authenticate("current", {session: false})); 

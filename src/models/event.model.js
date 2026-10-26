@@ -17,7 +17,7 @@ const eventSchema = new Schema ({
 {timestamps: true}
 );
 
-eventSchema.plugin(mongoosePaginate)
+
 export const eventModel = model("Events", eventSchema);
 
 
