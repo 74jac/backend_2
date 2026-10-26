@@ -11,6 +11,7 @@ try {
 
 export async function getById(req, res, next){
 try {
+    //llamar a services
     const events = await eventModel.find(
     res.status(200).json({message: "sucess", events})
     )
@@ -23,7 +24,7 @@ try {
 export async function createEvent(req, res, next){
 try {
     const newEvent = req.body;
-    const eventCreated = await eventModel.create(req.body);
+    const eventCreated = await eventModel.create({ ...req.body, organizer: req.user.id });
     res.status(201).json({ message: "Evento creado con éxito", newEvent: eventCreated });  
 } catch (error) {
     console.log(error);

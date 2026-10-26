@@ -17,7 +17,7 @@ export async function ticketPermition(req, res, next) {
     try {
         if(req.user.role == "user") next();
         if(req.user.role == "admin" || req.user.role == "organizer") {
-            const event = await eventModel.findById(req,URLSearchParams.ied); 
+            const event = await eventModel.findById(req.params.eid);
             if(event.organizer == req.user.id){
                 throw new Error ("No podes comprar un ticket de tu propio evento");
             }
@@ -28,3 +28,6 @@ export async function ticketPermition(req, res, next) {
 
 }
 
+//eventos cancelados
+//realizar validación de organizador no pueda editar o eliminar un evento que no sea suyo
+//realizar validacion de fecha para que no se pueda crear un evento con fecha pasada
