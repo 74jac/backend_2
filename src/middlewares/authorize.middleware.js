@@ -1,6 +1,5 @@
 import { Types } from "mongoose";
-import { eventModel } from "../models/event.model.js";
-
+import { eventRepository } from "../repositories/event.repository.js";
 
 export function rolesPermition(...rolesArgs) {
     const allowedRoles = Array.isArray(rolesArgs[0]) ? rolesArgs[0] : rolesArgs;
@@ -24,7 +23,6 @@ export function rolesPermition(...rolesArgs) {
     };
 }
 
-
 export async function ensureEventOwnerOrAdmin(req, res, next) {
     try {
         const eventId = req.params.id || req.params.eid;
@@ -36,7 +34,7 @@ export async function ensureEventOwnerOrAdmin(req, res, next) {
             });
         }
 
-        const event = await eventModel.findById(eventId);
+        const event = await eventRepository.findById(eventId);
 
         if (!event) {
             return res.status(404).json({
@@ -62,13 +60,9 @@ export async function ensureEventOwnerOrAdmin(req, res, next) {
             message: "No tenés permisos para modificar un evento ajeno"
         });
     } catch (error) {
-        return res.status(400).json({
-            status: "error",
-            message: error.message
-        });
+        return next(error);
     }
 }
-
 
 export async function ticketPermition(req, res, next) {
     try {
@@ -80,7 +74,7 @@ export async function ticketPermition(req, res, next) {
             });
         }
 
-        const event = await eventModel.findById(eventId);
+        const event = await eventRepository.findById(eventId);
 
         if (!event) {
             return res.status(404).json({
@@ -90,7 +84,7 @@ export async function ticketPermition(req, res, next) {
         }
 
         if (event.status === "cancelled") {
-            return res.status(400).json({
+            return res.status(409).json({
                 status: "error",
                 message: "No se pueden comprar tickets de un evento cancelado"
             });
@@ -107,9 +101,6 @@ export async function ticketPermition(req, res, next) {
 
         next();
     } catch (error) {
-        return res.status(403).json({
-            status: "error",
-            message: error.message
-        });
+        return next(error);
     }
 }

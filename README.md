@@ -1,23 +1,50 @@
 # Backend II - Proyecto Final (Plataforma de Eventos e Inscripciones)
 
-Este es el proyecto backend del curso Backend II de CoderHouse. Consiste en una API RESTful para una **Plataforma de Eventos e Inscripciones** desarrollada en Node.js y Express, con base de datos en MongoDB, diseñada con arquitectura en capas (`routes` → `controllers` → `services` → `repositories` → `models`), autenticación con Passport + JWT en cookies firmadas, autorización por roles y propiedad de recursos, gestión de eventos, control de cupos e inscripciones con notificaciones por email mediante **Nodemailer**.
+Este es el proyecto backend del curso Backend II de CoderHouse. Consiste en una API RESTful para una **Plataforma de Eventos e Inscripciones** desarrollada en Node.js y Express, con base de datos en MongoDB, estructurada bajo una **arquitectura profesional en capas (`Routes` → `Controllers` → `Services` → `Repositories` → `DAOs` → `Models`) + `DTOs`**, autenticación con Passport + JWT en cookies firmadas, autorización por roles y propiedad de recursos, gestión de eventos, control de cupos e inscripciones con notificaciones por email mediante **Nodemailer**.
 
 ---
 
-## 🛠 Tecnologías y Arquitectura
+## 🏗️ Arquitectura en Capas (DAO, Repository, Service, Controller y DTO)
 
-- **Node.js** y **Express.js** (Servidor web y ruteo)
-- **MongoDB** y **Mongoose** (Base de datos y modelado de datos)
-- **Passport.js** (`passport-local` y `passport-jwt`) + **Cookie-Parser** + **JWT** + **Bcrypt**
-- **Nodemailer** (Envío de notificaciones por correo electrónico al confirmar una inscripción)
-- **Dotenv** (Variables de entorno)
+El proyecto separa estrictamente las responsabilidades en capas formales:
 
-### Arquitectura en Capas
-- **`src/routes/`**: Definición de endpoints y aplicación de middlewares de autenticación y autorización.
-- **`src/controllers/`**: Manejo exclusivo de `req` y `res` (códigos de estado HTTP y formato de respuesta).
-- **`src/services/`**: Lógica y validaciones de negocio (fechas, capacidades, precios, control de cupos, duplicados, estados y envío de emails).
-- **`src/repositories/`**: Acceso a datos (consultas Mongoose y agregaciones desacopladas de la lógica de negocio).
-- **`src/models/`**: Esquemas de Mongoose (`Users`, `Events`, `Tickets`) basados únicamente en referencias `ObjectId`.
+```text
+src/
+├── config/          # Configuración de DB, variables de entorno y estrategias Passport
+├── routes/          # Definición de endpoints y aplicación de middlewares
+├── middlewares/     # Autenticación (401), autorización por roles/propiedad (403) y errores globales
+├── controllers/     # Coordinación exclusiva de request/response (sin lógica de negocio ni modelos)
+├── services/        # Lógica de negocio (cupos, estados, duplicados, fechas, envío de emails)
+├── repositories/    # Métodos orientados al dominio consumiendo DAOs (sin importar modelos Mongoose)
+├── dao/             # Única capa que importa y consulta los modelos de Mongoose directamente
+├── dto/             # Transformación y filtrado de respuestas (oculta password y filtra populates)
+├── models/          # Esquemas de Mongoose (Users, Events, Tickets)
+└── utils/           # Utilidades transversales (JWT, Bcrypt, Nodemailer)
+```
+
+### Responsabilidad de cada capa
+1. **DAO (`src/dao/user.dao.js`, `event.dao.js`, `ticket.dao.js`)**:
+   - **Son los únicos archivos del proyecto que importan los modelos de Mongoose directamente** (`userModel`, `eventModel`, `ticketModel`).
+   - Exponen métodos puros de acceso a datos (`find`, `findOne`, `findById`, `create`, `updateById`, `count`, `sumOccupiedSeatsByEvent`).
+2. **Repository (`src/repositories/user.repository.js`, `event.repository.js`, `ticket.repository.js`)**:
+   - Consumen el DAO correspondiente sin acoplarse a los modelos de Mongoose.
+   - Exponen métodos orientados al dominio (`findByEmail`, `findPublishedEvents`, `countActiveTickets`, `cancelTicket`, etc.).
+3. **Services (`src/services/user.services.js`, `sessions.services.js`, `event.services.js`, `ticket.services.js`)**:
+   - Consumen únicamente Repositories y DTOs (nunca DAOs ni modelos).
+   - Concentran toda la lógica de negocio: validación de fechas, capacidades, precios, cupos disponibles, prevención de inscripciones duplicadas, inmutabilidad de eventos/tickets cancelados y disparo de emails con Nodemailer.
+4. **Controllers (`src/controllers/`)**:
+   - Solo extraen datos de `req.body`, `req.params` y `req.query`, invocan al Service correspondiente y devuelven la respuesta HTTP o delegan el error a `next(error)`.
+5. **DTO (`src/dto/user.dto.js`, `event.dto.js`, `ticket.dto.js`)**:
+   - Filtran y dan forma a los datos salientes de usuario autenticado (`UserDTO`), eventos (`EventDTO`) y tickets (`TicketDTO`).
+   - **Garantizan que ninguna respuesta exponga el campo `password`** (ni siquiera hasheado), incluyendo cuando se utiliza `.populate()` sobre `user`, `organizer` o `event`.
+6. **Manejo Centralizado de Errores (`src/middlewares/error.middleware.js`)**:
+   - Unifica todas las respuestas de error bajo el formato `{ "status": "error", "message": "..." }` y distingue explícitamente:
+     - **`400 Bad Request`**: Datos de entrada inválidos (ej. fecha pasada al crear, `capacity <= 0`, `price < 0`, JSON mal formado).
+     - **`401 Unauthorized`**: Sin sesión activa o token JWT inválido/expirado.
+     - **`403 Forbidden`**: Sesión válida pero sin permisos de rol o intentando operar sobre un recurso ajeno.
+     - **`404 Not Found`**: Recurso inexistente (evento, ticket o usuario no encontrado).
+     - **`409 Conflict`**: Conflicto con el estado actual del recurso (ej. inscripción activa duplicada, sin cupos disponibles, intento de modificar un evento o ticket ya cancelado, email ya registrado).
+     - **`500 Internal Server Error`**: Error inesperado del servidor.
 
 ---
 
@@ -25,9 +52,9 @@ Este es el proyecto backend del curso Backend II de CoderHouse. Consiste en una 
 
 El sistema de autenticación está delegado a **Passport.js** (`src/config/passport.config.js`):
 
-1. **`register` (LocalStrategy)**: Valida campos obligatorios (`first_name`, `last_name`, `email`, `password`), formato de email, longitud mínima de contraseña, unicidad del correo, hashea la contraseña con Bcrypt y asigna siempre el rol por defecto **`user`** (impidiendo crear `admin` u `organizer` desde el body).
+1. **`register` (LocalStrategy)**: Valida campos obligatorios (`first_name`, `last_name`, `email`, `password`), formato de email, longitud mínima de contraseña, unicidad del correo mediante `UserRepository`, hashea la contraseña con Bcrypt y asigna siempre el rol por defecto **`user`**.
 2. **`login` (LocalStrategy)**: Verifica las credenciales del usuario y emite un JWT dentro de una cookie firmada y `httpOnly`.
-3. **`current` (JWTStrategy)**: Extrae el token JWT desde la cookie firmada mediante `cookieExtractor`, valida su vigencia y carga al usuario en `req.user`.
+3. **`current` (JWTStrategy)**: Extrae el token JWT desde la cookie firmada mediante `cookieExtractor`, valida su vigencia y carga al usuario en `req.user`. La respuesta pasa por `UserDTO` para no exponer jamás `password`.
 
 > **💡 Preparado para Providers Externos (Google / GitHub):** Gracias a la arquitectura modular en `src/config/passport.config.js`, el sistema está **listo para integrar proveedores OAuth externos (Google/GitHub)** sin necesidad de tocar ni modificar `app.js`.
 
@@ -41,7 +68,7 @@ El modelo `Users` (`src/models/user.model.js`) define tres roles: **`user`** (po
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Sesiones** | | | | | |
 | Registro e inicio de sesión | `POST /api/sessions/register` / `login` | ✅ | ✅ | ✅ | ✅ |
-| Ver sesión actual | `GET /api/sessions/current` | ❌ (`401`) | ✅ | ✅ | ✅ |
+| Ver sesión actual (DTO sin password) | `GET /api/sessions/current` | ❌ (`401`) | ✅ | ✅ | ✅ |
 | Cerrar sesión | `DELETE /api/sessions/logout` | ✅ | ✅ | ✅ | ✅ |
 | **Eventos** | | | | | |
 | Listar eventos (con filtros y paginación) | `GET /api/events` | ✅ | ✅ | ✅ | ✅ |
@@ -60,64 +87,24 @@ El modelo `Users` (`src/models/user.model.js`) define tres roles: **`user`** (po
 
 ---
 
-## 🚨 Diferencia Explícita entre `401 Unauthorized` y `403 Forbidden`
-
-| Código HTTP | Significado | ¿Cuándo ocurre en el sistema? | Middleware y Respuesta JSON |
-| :--- | :--- | :--- | :--- |
-| **`401 Unauthorized`** *(Sin sesión / No autenticado)* | **"No sé quién sos"**. El cliente intenta acceder a una ruta protegida sin una sesión válida. | • No se envió la cookie con el JWT.<br>• El token JWT expiró o su firma es inválida.<br>• El usuario del token no existe. | **`authMiddleware`** (`src/middlewares/auth.middleware.js`):<br>`{ "status": "error", "message": "No autenticado" }` |
-| **`403 Forbidden`** *(Sin permiso / No autorizado)* | **"Sé quién sos, pero no tenés permiso"**. El cliente tiene sesión válida (`req.user`), pero su rol o la propiedad del recurso no le permiten realizar la acción. | • Un `user` intenta crear un evento o ver inscriptos de un evento.<br>• Un `organizer` intenta modificar o ver tickets de un evento ajeno.<br>• Un usuario intenta cancelar un ticket ajeno. | **`rolesPermition`** y **`ensureEventOwnerOrAdmin`** (`src/middlewares/authorize.middleware.js`):<br>`{ "status": "error", "message": "No tenés permisos para realizar esta acción" }` |
-
----
-
 ## 📅 Entidad `Events` y Reglas de Negocio
 
-### Modelo `Event` (`src/models/event.model.js`)
-- `title`, `description`, `category`, `location`: `String` (obligatorios).
-- `date`: `Date` (obligatorio).
-- `capacity`: `Number` (`> 0`).
-- `price`: `Number` (`>= 0`).
-- `status`: `draft`, `published`, `cancelled`, `finished` (por defecto `draft`).
-- `organizer`: `ObjectId` (`ref: "Users"`).
-
-### Endpoints de Eventos (`/api/events`)
-- **`GET /api/events`** *(Público)*: Listado con filtros (`status`, `category`, `location`, `dateFrom`, `dateTo`), paginación (`page`, `limit`) y ordenamiento (`sort=date`, `sort=-date`, `sort=price`). Devuelve `{ data, page, limit, total, totalPages }`.
+- **`GET /api/events`** *(Público)*: Soporta filtros (`status`, `category`, `location`, `dateFrom`, `dateTo`), paginación (`page`, `limit`) y ordenamiento (`sort=date`, `sort=-date`, `sort=price`). Devuelve `{ data, page, limit, total, totalPages }` con cada evento transformado por `EventDTO`.
 - **`GET /api/events/:id`** *(Público)*: Detalle de un evento (`404` si no existe).
-- **`POST /api/events`** *(`organizer`, `admin`)*: Crea evento asignando automáticamente `organizer: req.user._id`, validando fecha futura, `capacity > 0` y `price >= 0`.
-- **`PUT /api/events/:id`** *(Dueño del evento o `admin`)*: Actualiza un evento (prohibido si ya está `cancelled`).
-- **`PATCH /api/events/:id/status`** *(Dueño del evento o `admin`)*: Cambia el estado o cancela el evento (baja lógica a `cancelled` sin eliminar físicamente). Prohibido publicar eventos `finished` o `cancelled`.
+- **`POST /api/events`** *(`organizer`, `admin`)*: Asigna automáticamente `organizer: req.user._id`, valida fecha futura, `capacity > 0` y `price >= 0`.
+- **`PUT /api/events/:id`** *(Dueño del evento o `admin`)*: Actualiza un evento (rechaza con `409` si ya está `cancelled`).
+- **`PATCH /api/events/:id/status`** *(Dueño del evento o `admin`)*: Cambia el estado o cancela el evento (baja lógica a `cancelled` sin eliminar físicamente).
 
 ---
 
 ## 🎟️ Entidad `Tickets`, Flujo de Inscripción y Control de Cupos
 
-### Modelo `Ticket` (`src/models/ticket.model.js`)
-- `user`: `ObjectId` (`ref: "Users"`), solo referencia (sin objetos embebidos).
-- `event`: `ObjectId` (`ref: "Events"`), solo referencia (sin objetos embebidos).
-- `status`: `confirmed`, `pending`, `cancelled` (por defecto `confirmed`).
-- `quantity`: `Number` (`> 0`, por defecto `1`).
-- `reservationCode`: `String` único autogenerado (`RES-XXXXXXXX`).
-- `createdAt`: Fecha de creación (`timestamps: true`).
-- `cancelledAt`: Fecha de cancelación (`null` mientras está activo).
-
-### Flujo de Inscripción y Regla de Cupos (`src/services/ticket.services.js`)
-1. **Validación del evento**: Verifica que el evento exista (`404` si no existe) y que su estado sea **`published`** (rechaza eventos `draft`, `cancelled` o `finished`).
-2. **Validación de cantidad**: Verifica que `quantity` sea un entero `> 0`.
-3. **Prevención de duplicados**: Verifica que el usuario no tenga ya un ticket activo (`confirmed` o `pending`) para el mismo evento.
-4. **Cálculo dinámico de cupos disponibles**:
-   - Se suman las cantidades (`quantity`) únicamente de los tickets con estado activo (`confirmed` o `pending`).
-   - **Los tickets `cancelled` no ocupan cupo**.
-   - Se verifica que `event.capacity - occupiedSeats >= quantity`.
-5. **Confirmación y notificación por email**: Se guarda el ticket con código `reservationCode` único y se envía un correo de confirmación al usuario mediante **Nodemailer** (`src/utils/mailer.js`).
-6. **Cancelación y liberación de cupo (`PATCH /api/tickets/:tid/cancel`)**:
-   - Valida que el ticket exista, que pertenezca al usuario solicitante (o sea `admin`) y que no esté ya cancelado.
-   - Cambia `status` a `"cancelled"` y registra `cancelledAt` (sin eliminar el documento de la base de datos).
-   - Al pasar a `"cancelled"`, el cupo queda **disponible automáticamente** para nuevas inscripciones.
-
-### Endpoints de Tickets
-- **`POST /api/events/:eid/tickets`** *(Autenticado)*: Inscribe al usuario en el evento `:eid` (recibe `{ "quantity": 1 }` opcional en el body) y envía el email de confirmación.
-- **`GET /api/tickets/my-tickets`** *(Autenticado)*: Lista los tickets del usuario actual incluyendo `title`, `date` y `location` del evento vía `populate`, sin exponer datos de otros usuarios.
-- **`GET /api/events/:eid/tickets`** *(`organizer` dueño del evento o `admin`)*: Lista todas las inscripciones del evento `:eid` junto con el resumen de cupos (`capacity`, `occupiedSeats`, `availableSeats`).
-- **`PATCH /api/tickets/:tid/cancel`** *(Dueño del ticket o `admin`)*: Cancela el ticket registrando `cancelledAt` y liberando el cupo.
+- **`POST /api/events/:eid/tickets`** *(Autenticado)*:
+  - Valida que el evento exista (`404`), esté `published` (`409` si está `cancelled`/`finished`/`draft`), que `quantity > 0` (`400`), que el usuario no tenga ya un ticket activo para ese evento (`409`) y que haya cupos disponibles (`capacity - countActiveTickets >= quantity`, donde los `cancelled` no ocupan cupo).
+  - Crea el ticket con `reservationCode` único, envía email de confirmación con **Nodemailer** (`src/utils/mailer.js`) y devuelve el resultado filtrado por `TicketDTO`.
+- **`GET /api/tickets/my-tickets`** *(Autenticado)*: Lista los tickets del usuario actual poblando `title`, `date` y `location` del evento a través de `TicketDTO`.
+- **`GET /api/events/:eid/tickets`** *(`organizer` dueño del evento o `admin`)*: Lista las inscripciones del evento filtrando los datos del usuario con `UserDTO` (sin exponer `password`).
+- **`PATCH /api/tickets/:tid/cancel`** *(Dueño del ticket o `admin`)*: Cambia `status` a `cancelled`, registra `cancelledAt` y libera el cupo automáticamente.
 
 ---
 
@@ -127,17 +114,17 @@ El modelo `Users` (`src/models/user.model.js`) define tres roles: **`user`** (po
    ```bash
    npm install
    ```
-2. Crear un archivo `.env` en la raíz guiándose por `.env.example` (nunca hardcodear credenciales en el código):
+2. Crear un archivo `.env` en la raíz guiándose por `.env.example`:
    ```env
    PORT=3000
    MONGO_URI=mongodb://localhost:27017/95160
    COOKIE_SECRET=tu_secreto_de_cookies
    JWT_SECRET=tu_secreto_de_jwt
-   MAIL_HOST=smtp.gmail.com
+   MAIL_HOST=smtp-mail.outlook.com
    MAIL_PORT=587
-   MAIL_USER=tu_correo@gmail.com
+   MAIL_USER=tu_correo@outlook.com
    MAIL_PASS=tu_app_password
-   MAIL_FROM="Plataforma de Eventos <tu_correo@gmail.com>"
+   MAIL_FROM="Plataforma de Eventos <tu_correo@outlook.com>"
    ```
 3. Ejecutar el servidor:
    - **Modo Desarrollo:** `npm run dev`

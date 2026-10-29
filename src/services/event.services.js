@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { eventRepository } from "../repositories/event.repository.js";
+import { EventDTO } from "../dto/event.dto.js";
 
 const VALID_STATUSES = ["draft", "published", "cancelled", "finished"];
 
@@ -64,7 +65,6 @@ export class EventService {
         const parsedLimit = Math.max(1, parseInt(limit, 10) || 10);
         const skip = (parsedPage - 1) * parsedLimit;
 
-        // Parseo de ordenamiento: soporta "date", "-date", "date:desc", "date:asc", "price", etc.
         let sortOption = { date: 1 };
         if (typeof sort === "string" && sort.trim() !== "") {
             const rawSort = sort.trim();
@@ -78,7 +78,7 @@ export class EventService {
             }
         }
 
-        const [data, total] = await Promise.all([
+        const [events, total] = await Promise.all([
             eventRepository.findPaginated({
                 filter,
                 skip,
@@ -91,7 +91,7 @@ export class EventService {
         const totalPages = Math.ceil(total / parsedLimit) || 1;
 
         return {
-            data,
+            data: EventDTO.fromEvents(events),
             page: parsedPage,
             limit: parsedLimit,
             total,
@@ -109,7 +109,7 @@ export class EventService {
             throw createHttpError(404, "Evento no encontrado");
         }
 
-        return event;
+        return EventDTO.fromEvent(event);
     }
 
     async createEvent(eventData, user) {
@@ -172,7 +172,6 @@ export class EventService {
             );
         }
 
-        
         const newEvent = await eventRepository.create({
             title,
             description,
@@ -185,18 +184,24 @@ export class EventService {
             organizer: user._id
         });
 
-        return newEvent;
+        return EventDTO.fromEvent(newEvent);
     }
 
     async updateEvent(id, updateData) {
-        const existingEvent = await this.getEventById(id);
+        if (!Types.ObjectId.isValid(id)) {
+            throw createHttpError(404, "Evento no encontrado");
+        }
+
+        const existingEvent = await eventRepository.findById(id);
+        if (!existingEvent) {
+            throw createHttpError(404, "Evento no encontrado");
+        }
 
         if (existingEvent.status === "cancelled") {
-            throw createHttpError(400, "No se puede modificar un evento que se encuentra cancelado");
+            throw createHttpError(409, "No se puede modificar un evento que se encuentra cancelado");
         }
 
         const sanitizedUpdate = { ...updateData };
-        // Impedir que se modifique el organizer desde el body
         delete sanitizedUpdate.organizer;
 
         if (sanitizedUpdate.capacity !== undefined) {
@@ -235,13 +240,14 @@ export class EventService {
             }
             if (existingEvent.status === "finished" && sanitizedUpdate.status === "published") {
                 throw createHttpError(
-                    400,
+                    409,
                     "No se puede publicar un evento que ya ha finalizado"
                 );
             }
         }
 
-        return await eventRepository.updateById(id, sanitizedUpdate);
+        const updated = await eventRepository.updateById(id, sanitizedUpdate);
+        return EventDTO.fromEvent(updated);
     }
 
     async updateEventStatus(id, newStatus) {
@@ -252,23 +258,31 @@ export class EventService {
             );
         }
 
-        const existingEvent = await this.getEventById(id);
+        if (!Types.ObjectId.isValid(id)) {
+            throw createHttpError(404, "Evento no encontrado");
+        }
+
+        const existingEvent = await eventRepository.findById(id);
+        if (!existingEvent) {
+            throw createHttpError(404, "Evento no encontrado");
+        }
 
         if (existingEvent.status === "cancelled") {
             throw createHttpError(
-                400,
+                409,
                 "Un evento cancelado no puede modificarse ni cambiar de estado"
             );
         }
 
         if (existingEvent.status === "finished" && newStatus === "published") {
             throw createHttpError(
-                400,
+                409,
                 "No se puede publicar un evento que ya se encuentra finalizado"
             );
         }
 
-        return await eventRepository.updateById(id, { status: newStatus });
+        const updated = await eventRepository.updateById(id, { status: newStatus });
+        return EventDTO.fromEvent(updated);
     }
 }
 

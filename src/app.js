@@ -9,6 +9,7 @@ import { env } from "./config/env.js";
 import cookieParser from "cookie-parser";
 import passport from "passport";
 import "./config/passport.config.js";
+import { errorHandler } from "./middlewares/error.middleware.js";
 
 const app = express();
 
@@ -23,9 +24,12 @@ app.use("/api/event", eventRouter);
 app.use("/api/tickets", ticketRouter);
 app.use("/api/sessions", sessionRouter);
 
+// Middleware centralizado de manejo de errores
+app.use(errorHandler);
+
 app.listen(env.PORT, () => {
     console.log("Server en el puerto " + env.PORT);
     connectDB()
         .then(() => console.log("Conectado a DB"))
-        .catch((e) => console.log(e));
+        .catch((e) => console.error(e));
 });

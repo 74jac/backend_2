@@ -1,68 +1,48 @@
-import { Types } from "mongoose";
-import { ticketModel } from "../models/ticket.model.js";
+import { ticketDAO } from "../dao/ticket.dao.js";
 
 export class TicketRepository {
     async create(ticketData) {
-        return await ticketModel.create(ticketData);
+        return await ticketDAO.create(ticketData);
     }
 
     async findById(id) {
-        return await ticketModel.findById(id);
+        return await ticketDAO.findById(id);
     }
 
     async findActiveByUserAndEvent(userId, eventId) {
-        return await ticketModel.findOne({
+        return await ticketDAO.findOne({
             user: userId,
             event: eventId,
             status: { $in: ["confirmed", "pending"] }
         });
     }
 
-    async getOccupiedSeatsByEvent(eventId) {
-        const result = await ticketModel.aggregate([
-            {
-                $match: {
-                    event: new Types.ObjectId(eventId),
-                    status: { $in: ["confirmed", "pending"] }
-                }
-            },
-            {
-                $group: {
-                    _id: "$event",
-                    occupiedSeats: { $sum: "$quantity" }
-                }
-            }
-        ]);
+    async countActiveTickets(eventId) {
+        return await ticketDAO.sumOccupiedSeatsByEvent(eventId);
+    }
 
-        return result.length > 0 ? result[0].occupiedSeats : 0;
+    async getOccupiedSeatsByEvent(eventId) {
+        return await this.countActiveTickets(eventId);
     }
 
     async findByUser(userId) {
-        return await ticketModel
-            .find({ user: userId })
-            .populate("event", "title date location price status")
-            .sort({ createdAt: -1 });
+        return await ticketDAO.findByUserPopulated(userId);
     }
 
     async findByEvent(eventId) {
-        return await ticketModel
-            .find({ event: eventId })
-            .populate("user", "first_name last_name email")
-            .populate("event", "title date location capacity status")
-            .sort({ createdAt: -1 });
+        return await ticketDAO.findByEventPopulated(eventId);
+    }
+
+    async cancelTicket(id) {
+        return await ticketDAO.updateById(id, {
+            status: "cancelled",
+            cancelledAt: new Date()
+        });
     }
 
     async cancelById(id) {
-        return await ticketModel.findByIdAndUpdate(
-            id,
-            {
-                status: "cancelled",
-                cancelledAt: new Date()
-            },
-            { new: true, runValidators: true }
-        );
+        return await this.cancelTicket(id);
     }
 }
 
 export const ticketRepository = new TicketRepository();
-

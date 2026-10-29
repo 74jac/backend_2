@@ -1,7 +1,7 @@
 import { ticketService } from "../services/ticket.services.js";
 
 
-export async function createTicket(req, res) {
+export async function createTicket(req, res, next) {
     try {
         const eventId = req.params.eid || req.params.id;
         const { quantity = 1 } = req.body || {};
@@ -20,15 +20,12 @@ export async function createTicket(req, res) {
             emailSent: result.emailSent
         });
     } catch (error) {
-        res.status(error.statusCode || 400).json({
-            status: "error",
-            message: error.message
-        });
+        next(error);
     }
 }
 
 
-export async function getMyTickets(req, res) {
+export async function getMyTickets(req, res, next) {
     try {
         const tickets = await ticketService.getMyTickets(req.user);
         res.status(200).json({
@@ -36,15 +33,12 @@ export async function getMyTickets(req, res) {
             payload: tickets
         });
     } catch (error) {
-        res.status(error.statusCode || 500).json({
-            status: "error",
-            message: error.message
-        });
+        next(error);
     }
 }
 
-// GET /api/events/:eid/tickets
-export async function getEventTickets(req, res) {
+
+export async function getEventTickets(req, res, next) {
     try {
         const eventId = req.params.eid || req.params.id;
         const result = await ticketService.getTicketsByEvent(eventId);
@@ -53,15 +47,12 @@ export async function getEventTickets(req, res) {
             ...result
         });
     } catch (error) {
-        res.status(error.statusCode || 400).json({
-            status: "error",
-            message: error.message
-        });
+        next(error);
     }
 }
 
 
-export async function cancelTicket(req, res) {
+export async function cancelTicket(req, res, next) {
     try {
         const { tid } = req.params;
         const cancelledTicket = await ticketService.cancelTicket(tid, req.user);
@@ -71,9 +62,6 @@ export async function cancelTicket(req, res) {
             payload: cancelledTicket
         });
     } catch (error) {
-        res.status(error.statusCode || 400).json({
-            status: "error",
-            message: error.message
-        });
+        next(error);
     }
 }

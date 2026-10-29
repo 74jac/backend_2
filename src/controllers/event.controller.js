@@ -1,6 +1,6 @@
 import { eventService } from "../services/event.services.js";
 
-export async function getAll(req, res) {
+export async function getAll(req, res, next) {
     try {
         const result = await eventService.getEvents(req.query);
         res.status(200).json({
@@ -8,14 +8,11 @@ export async function getAll(req, res) {
             ...result
         });
     } catch (error) {
-        res.status(error.statusCode || 500).json({
-            status: "error",
-            message: error.message
-        });
+        next(error);
     }
 }
 
-export async function getById(req, res) {
+export async function getById(req, res, next) {
     try {
         const eventId = req.params.id || req.params.eid;
         const event = await eventService.getEventById(eventId);
@@ -24,14 +21,11 @@ export async function getById(req, res) {
             payload: event
         });
     } catch (error) {
-        res.status(error.statusCode || 400).json({
-            status: "error",
-            message: error.message
-        });
+        next(error);
     }
 }
 
-export async function createEvent(req, res) {
+export async function createEvent(req, res, next) {
     try {
         const eventCreated = await eventService.createEvent(req.body, req.user);
         res.status(201).json({
@@ -40,14 +34,11 @@ export async function createEvent(req, res) {
             payload: eventCreated
         });
     } catch (error) {
-        res.status(error.statusCode || 400).json({
-            status: "error",
-            message: error.message
-        });
+        next(error);
     }
 }
 
-export async function updateEvent(req, res) {
+export async function updateEvent(req, res, next) {
     try {
         const eventId = req.params.id || req.params.eid;
         const eventUpdated = await eventService.updateEvent(eventId, req.body);
@@ -57,14 +48,11 @@ export async function updateEvent(req, res) {
             payload: eventUpdated
         });
     } catch (error) {
-        res.status(error.statusCode || 400).json({
-            status: "error",
-            message: error.message
-        });
+        next(error);
     }
 }
 
-export async function updateEventStatus(req, res) {
+export async function updateEventStatus(req, res, next) {
     try {
         const eventId = req.params.id || req.params.eid;
         const { status } = req.body;
@@ -75,17 +63,13 @@ export async function updateEventStatus(req, res) {
             payload: eventUpdated
         });
     } catch (error) {
-        res.status(error.statusCode || 400).json({
-            status: "error",
-            message: error.message
-        });
+        next(error);
     }
 }
 
-export async function deleteEvent(req, res) {
+export async function deleteEvent(req, res, next) {
     try {
         const eventId = req.params.id || req.params.eid;
-        // Cancelar = cambiar status a cancelled; no se eliminan físicamente
         const eventCancelled = await eventService.updateEventStatus(eventId, "cancelled");
         res.status(200).json({
             status: "success",
@@ -93,9 +77,6 @@ export async function deleteEvent(req, res) {
             payload: eventCancelled
         });
     } catch (error) {
-        res.status(error.statusCode || 400).json({
-            status: "error",
-            message: error.message
-        });
+        next(error);
     }
 }
