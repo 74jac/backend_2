@@ -1,6 +1,6 @@
 # Backend II - Proyecto Final (Plataforma de Eventos e Inscripciones)
 
-Este es el proyecto backend del curso Backend II de CoderHouse. Consiste en una API RESTful para una **Plataforma de Eventos e Inscripciones** desarrollada en Node.js y Express, con base de datos en MongoDB, diseñada con arquitectura en capas (`routes` → `controllers` → `services` → `repositories` → `models`), autenticación con Passport + JWT en cookies firmadas y autorización por roles y propiedad de recursos.
+Este es el proyecto backend del curso Backend II de CoderHouse. Consiste en una API RESTful para una **Plataforma de Eventos e Inscripciones** desarrollada en Node.js y Express, con base de datos en MongoDB, diseñada con arquitectura en capas (`routes` → `controllers` → `services` → `repositories` → `models`), autenticación con Passport + JWT en cookies firmadas, autorización por roles y propiedad de recursos, gestión de eventos, control de cupos e inscripciones con notificaciones por email mediante **Nodemailer**.
 
 ---
 
@@ -9,14 +9,15 @@ Este es el proyecto backend del curso Backend II de CoderHouse. Consiste en una 
 - **Node.js** y **Express.js** (Servidor web y ruteo)
 - **MongoDB** y **Mongoose** (Base de datos y modelado de datos)
 - **Passport.js** (`passport-local` y `passport-jwt`) + **Cookie-Parser** + **JWT** + **Bcrypt**
+- **Nodemailer** (Envío de notificaciones por correo electrónico al confirmar una inscripción)
 - **Dotenv** (Variables de entorno)
 
 ### Arquitectura en Capas
 - **`src/routes/`**: Definición de endpoints y aplicación de middlewares de autenticación y autorización.
 - **`src/controllers/`**: Manejo exclusivo de `req` y `res` (códigos de estado HTTP y formato de respuesta).
-- **`src/services/`**: Lógica y validaciones de negocio (fechas, capacidades, precios, transiciones de estado, filtros y paginación).
-- **`src/repositories/`**: Acceso a datos (consultas Mongoose desacopladas de la lógica de negocio).
-- **`src/models/`**: Esquemas de Mongoose (`Users`, `Events`, `Tickets`).
+- **`src/services/`**: Lógica y validaciones de negocio (fechas, capacidades, precios, control de cupos, duplicados, estados y envío de emails).
+- **`src/repositories/`**: Acceso a datos (consultas Mongoose y agregaciones desacopladas de la lógica de negocio).
+- **`src/models/`**: Esquemas de Mongoose (`Users`, `Events`, `Tickets`) basados únicamente en referencias `ObjectId`.
 
 ---
 
@@ -49,9 +50,11 @@ El modelo `Users` (`src/models/user.model.js`) define tres roles: **`user`** (po
 | Modificar evento propio | `PUT /api/events/:id` | ❌ (`401`) | ❌ (`403`) | ✅ *(solo propio)* | ✅ |
 | Modificar evento ajeno | `PUT /api/events/:id` | ❌ (`401`) | ❌ (`403`) | ❌ (`403`) | ✅ |
 | Cambiar estado / cancelar evento | `PATCH /api/events/:id/status` | ❌ (`401`) | ❌ (`403`) | ✅ *(solo propio)* | ✅ *(cualquiera)* |
-| **Tickets** | | | | | |
-| Consultar tickets | `GET /api/tickets` y `GET /api/tickets/:tid` | ❌ (`401`) | ✅ | ✅ | ✅ |
-| Comprar ticket de un evento | `POST /api/tickets/:uid/:eid` | ❌ (`401`) | ✅ | ⚠️ *(No de su propio evento -> `403`)* | ⚠️ *(No de su propio evento -> `403`)* |
+| **Tickets e Inscripciones** | | | | | |
+| Inscribirse a un evento | `POST /api/events/:eid/tickets` | ❌ (`401`) | ✅ | ✅ *(no al propio -> `403`)* | ✅ *(no al propio -> `403`)* |
+| Ver mis tickets | `GET /api/tickets/my-tickets` | ❌ (`401`) | ✅ *(propios)* | ✅ *(propios)* | ✅ *(propios)* |
+| Ver inscriptos de un evento | `GET /api/events/:eid/tickets` | ❌ (`401`) | ❌ (`403`) | ✅ *(solo evento propio)* | ✅ *(cualquiera)* |
+| Cancelar un ticket | `PATCH /api/tickets/:tid/cancel` | ❌ (`401`) | ✅ *(solo propio)* | ✅ *(solo propio)* | ✅ *(cualquiera)* |
 | **Usuarios (Administración)** | | | | | |
 | Ver / buscar / actualizar usuarios | `GET` / `PUT /api/users` | ❌ (`401`) | ❌ (`403`) | ❌ (`403`) | ✅ |
 
@@ -62,7 +65,7 @@ El modelo `Users` (`src/models/user.model.js`) define tres roles: **`user`** (po
 | Código HTTP | Significado | ¿Cuándo ocurre en el sistema? | Middleware y Respuesta JSON |
 | :--- | :--- | :--- | :--- |
 | **`401 Unauthorized`** *(Sin sesión / No autenticado)* | **"No sé quién sos"**. El cliente intenta acceder a una ruta protegida sin una sesión válida. | • No se envió la cookie con el JWT.<br>• El token JWT expiró o su firma es inválida.<br>• El usuario del token no existe. | **`authMiddleware`** (`src/middlewares/auth.middleware.js`):<br>`{ "status": "error", "message": "No autenticado" }` |
-| **`403 Forbidden`** *(Sin permiso / No autorizado)* | **"Sé quién sos, pero no tenés permiso"**. El cliente tiene sesión válida (`req.user`), pero su rol o la propiedad del recurso no le permiten realizar la acción. | • Un `user` intenta crear o editar un evento.<br>• Un `organizer` intenta modificar un evento ajeno.<br>• Un `user` u `organizer` intenta acceder a `/api/users`. | **`rolesPermition`**, **`ensureEventOwnerOrAdmin`** y **`ticketPermition`** (`src/middlewares/authorize.middleware.js`):<br>`{ "status": "error", "message": "No tenés permisos para realizar esta acción" }` |
+| **`403 Forbidden`** *(Sin permiso / No autorizado)* | **"Sé quién sos, pero no tenés permiso"**. El cliente tiene sesión válida (`req.user`), pero su rol o la propiedad del recurso no le permiten realizar la acción. | • Un `user` intenta crear un evento o ver inscriptos de un evento.<br>• Un `organizer` intenta modificar o ver tickets de un evento ajeno.<br>• Un usuario intenta cancelar un ticket ajeno. | **`rolesPermition`** y **`ensureEventOwnerOrAdmin`** (`src/middlewares/authorize.middleware.js`):<br>`{ "status": "error", "message": "No tenés permisos para realizar esta acción" }` |
 
 ---
 
@@ -71,62 +74,50 @@ El modelo `Users` (`src/models/user.model.js`) define tres roles: **`user`** (po
 ### Modelo `Event` (`src/models/event.model.js`)
 - `title`, `description`, `category`, `location`: `String` (obligatorios).
 - `date`: `Date` (obligatorio).
-- `capacity`: `Number` (obligatorio, `> 0`).
-- `price`: `Number` (obligatorio, `>= 0`).
-- `status`: `String`, valores permitidos: `draft`, `published`, `cancelled`, `finished` (por defecto `draft`).
-- `organizer`: `ObjectId` con referencia (`ref: "Users"`) al usuario creador.
+- `capacity`: `Number` (`> 0`).
+- `price`: `Number` (`>= 0`).
+- `status`: `draft`, `published`, `cancelled`, `finished` (por defecto `draft`).
+- `organizer`: `ObjectId` (`ref: "Users"`).
 
-### Reglas de Negocio (en `src/services/event.services.js`)
-1. **Asignación automática de `organizer`**: Al crear un evento, `organizer` se toma siempre de `req.user._id`, ignorando cualquier valor enviado en el `body`.
-2. **Validación de fecha futura**: No se permite crear ni actualizar un evento con una fecha pasada (`date <= ahora`).
-3. **Validación de capacidad y precio**: Se rechaza cualquier evento con `capacity <= 0` o `price < 0`.
-4. **Inmutabilidad de eventos cancelados**: Un evento en estado `cancelled` **no puede modificarse ni volver a cambiar de estado**.
-5. **Restricción de publicación**: No se permite pasar a `published` un evento que ya esté `finished` o `cancelled`.
-6. **Cancelación por baja lógica**: Los eventos no se eliminan físicamente de la base de datos; cancelar un evento consiste en cambiar su `status` a `cancelled` mediante `PATCH /api/events/:id/status` (o `DELETE /api/events/:id`).
+### Endpoints de Eventos (`/api/events`)
+- **`GET /api/events`** *(Público)*: Listado con filtros (`status`, `category`, `location`, `dateFrom`, `dateTo`), paginación (`page`, `limit`) y ordenamiento (`sort=date`, `sort=-date`, `sort=price`). Devuelve `{ data, page, limit, total, totalPages }`.
+- **`GET /api/events/:id`** *(Público)*: Detalle de un evento (`404` si no existe).
+- **`POST /api/events`** *(`organizer`, `admin`)*: Crea evento asignando automáticamente `organizer: req.user._id`, validando fecha futura, `capacity > 0` y `price >= 0`.
+- **`PUT /api/events/:id`** *(Dueño del evento o `admin`)*: Actualiza un evento (prohibido si ya está `cancelled`).
+- **`PATCH /api/events/:id/status`** *(Dueño del evento o `admin`)*: Cambia el estado o cancela el evento (baja lógica a `cancelled` sin eliminar físicamente). Prohibido publicar eventos `finished` o `cancelled`.
 
 ---
 
-## 🛣️ Endpoints de Eventos (`/api/events`)
+## 🎟️ Entidad `Tickets`, Flujo de Inscripción y Control de Cupos
 
-### 1. Listar eventos con filtros, paginación y ordenamiento
-- **Ruta:** `GET /api/events` *(Público)*
-- **Query params disponibles:**
-  - `status`: Filtra por estado (`draft`, `published`, `cancelled`, `finished`).
-  - `category`: Filtra por categoría (insensible a mayúsculas/minúsculas).
-  - `location`: Filtra por coincidencia en ubicación.
-  - `dateFrom` y `dateTo`: Filtra por rango de fechas (`ISO 8601`, ej. `2026-11-01`).
-  - `page`: Número de página (por defecto `1`).
-  - `limit`: Cantidad de resultados por página (por defecto `10`).
-  - `sort`: Campo de ordenamiento (ej. `sort=date`, `sort=-date`, `sort=date:desc`, `sort=price`).
-- **Ejemplo:** `GET /api/events?status=published&category=workshop&page=2&limit=5&sort=date`
-- **Respuesta (`200 OK`):**
-  ```json
-  {
-    "status": "success",
-    "data": [...],
-    "page": 2,
-    "limit": 5,
-    "total": 12,
-    "totalPages": 3
-  }
-  ```
+### Modelo `Ticket` (`src/models/ticket.model.js`)
+- `user`: `ObjectId` (`ref: "Users"`), solo referencia (sin objetos embebidos).
+- `event`: `ObjectId` (`ref: "Events"`), solo referencia (sin objetos embebidos).
+- `status`: `confirmed`, `pending`, `cancelled` (por defecto `confirmed`).
+- `quantity`: `Number` (`> 0`, por defecto `1`).
+- `reservationCode`: `String` único autogenerado (`RES-XXXXXXXX`).
+- `createdAt`: Fecha de creación (`timestamps: true`).
+- `cancelledAt`: Fecha de cancelación (`null` mientras está activo).
 
-### 2. Obtener detalle de un evento
-- **Ruta:** `GET /api/events/:id` *(Público)*
-- Retorna `200 OK` con el evento o `404 Not Found` si el ID no existe o es inválido.
+### Flujo de Inscripción y Regla de Cupos (`src/services/ticket.services.js`)
+1. **Validación del evento**: Verifica que el evento exista (`404` si no existe) y que su estado sea **`published`** (rechaza eventos `draft`, `cancelled` o `finished`).
+2. **Validación de cantidad**: Verifica que `quantity` sea un entero `> 0`.
+3. **Prevención de duplicados**: Verifica que el usuario no tenga ya un ticket activo (`confirmed` o `pending`) para el mismo evento.
+4. **Cálculo dinámico de cupos disponibles**:
+   - Se suman las cantidades (`quantity`) únicamente de los tickets con estado activo (`confirmed` o `pending`).
+   - **Los tickets `cancelled` no ocupan cupo**.
+   - Se verifica que `event.capacity - occupiedSeats >= quantity`.
+5. **Confirmación y notificación por email**: Se guarda el ticket con código `reservationCode` único y se envía un correo de confirmación al usuario mediante **Nodemailer** (`src/utils/mailer.js`).
+6. **Cancelación y liberación de cupo (`PATCH /api/tickets/:tid/cancel`)**:
+   - Valida que el ticket exista, que pertenezca al usuario solicitante (o sea `admin`) y que no esté ya cancelado.
+   - Cambia `status` a `"cancelled"` y registra `cancelledAt` (sin eliminar el documento de la base de datos).
+   - Al pasar a `"cancelled"`, el cupo queda **disponible automáticamente** para nuevas inscripciones.
 
-### 3. Crear un evento
-- **Ruta:** `POST /api/events` *(Protegida: solo `organizer` o `admin`)*
-- Asigna automáticamente `organizer: req.user._id` y valida fecha futura, `capacity > 0` y `price >= 0`.
-
-### 4. Modificar un evento
-- **Ruta:** `PUT /api/events/:id` *(Protegida: dueño del evento o `admin`)*
-- Rechaza con `403` si un `organizer` intenta modificar un evento ajeno, y con `400` si el evento ya está `cancelled`.
-
-### 5. Cambiar estado / Cancelar un evento
-- **Ruta:** `PATCH /api/events/:id/status` *(Protegida: dueño del evento o `admin`)*
-- **Body:** `{ "status": "published" | "cancelled" | "finished" | "draft" }`
-- No permite modificar un evento ya `cancelled` ni publicar un evento `finished` o `cancelled`.
+### Endpoints de Tickets
+- **`POST /api/events/:eid/tickets`** *(Autenticado)*: Inscribe al usuario en el evento `:eid` (recibe `{ "quantity": 1 }` opcional en el body) y envía el email de confirmación.
+- **`GET /api/tickets/my-tickets`** *(Autenticado)*: Lista los tickets del usuario actual incluyendo `title`, `date` y `location` del evento vía `populate`, sin exponer datos de otros usuarios.
+- **`GET /api/events/:eid/tickets`** *(`organizer` dueño del evento o `admin`)*: Lista todas las inscripciones del evento `:eid` junto con el resumen de cupos (`capacity`, `occupiedSeats`, `availableSeats`).
+- **`PATCH /api/tickets/:tid/cancel`** *(Dueño del ticket o `admin`)*: Cancela el ticket registrando `cancelledAt` y liberando el cupo.
 
 ---
 
@@ -136,12 +127,17 @@ El modelo `Users` (`src/models/user.model.js`) define tres roles: **`user`** (po
    ```bash
    npm install
    ```
-2. Crear un archivo `.env` en la raíz basado en `.env.example`:
+2. Crear un archivo `.env` en la raíz guiándose por `.env.example` (nunca hardcodear credenciales en el código):
    ```env
    PORT=3000
    MONGO_URI=mongodb://localhost:27017/95160
-   COOKIE_SECRET=elsecretodecookies
-   JWT_SECRET=elsecretodelajwt
+   COOKIE_SECRET=tu_secreto_de_cookies
+   JWT_SECRET=tu_secreto_de_jwt
+   MAIL_HOST=smtp.gmail.com
+   MAIL_PORT=587
+   MAIL_USER=tu_correo@gmail.com
+   MAIL_PASS=tu_app_password
+   MAIL_FROM="Plataforma de Eventos <tu_correo@gmail.com>"
    ```
 3. Ejecutar el servidor:
    - **Modo Desarrollo:** `npm run dev`

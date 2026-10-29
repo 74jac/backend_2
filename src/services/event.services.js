@@ -172,7 +172,7 @@ export class EventService {
             );
         }
 
-        // El organizer se asigna siempre desde req.user, nunca desde el body
+        
         const newEvent = await eventRepository.create({
             title,
             description,
