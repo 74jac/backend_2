@@ -1,7 +1,7 @@
+import { Types } from "mongoose";
 import { eventModel } from "../models/event.model.js";
 
-// Middleware de autorización por roles: recibe roles permitidos (array o argumentos)
-// Compara contra req.user.role y responde 403 si no coincide
+
 export function rolesPermition(...rolesArgs) {
     const allowedRoles = Array.isArray(rolesArgs[0]) ? rolesArgs[0] : rolesArgs;
 
@@ -24,12 +24,19 @@ export function rolesPermition(...rolesArgs) {
     };
 }
 
-// Middleware de propiedad de recurso:
-// organizer solo puede modificar/eliminar sus propios eventos; admin puede modificar cualquiera
+
 export async function ensureEventOwnerOrAdmin(req, res, next) {
     try {
-        const { eid } = req.params;
-        const event = await eventModel.findById(eid);
+        const eventId = req.params.id || req.params.eid;
+
+        if (!Types.ObjectId.isValid(eventId)) {
+            return res.status(404).json({
+                status: "error",
+                message: "Evento no encontrado"
+            });
+        }
+
+        const event = await eventModel.findById(eventId);
 
         if (!event) {
             return res.status(404).json({
@@ -52,21 +59,28 @@ export async function ensureEventOwnerOrAdmin(req, res, next) {
 
         return res.status(403).json({
             status: "error",
-            message: "No tenés permisos para modificar o eliminar un evento ajeno"
+            message: "No tenés permisos para modificar un evento ajeno"
         });
     } catch (error) {
         return res.status(400).json({
             status: "error",
-            message: "ID de evento inválido o error al verificar permisos"
+            message: error.message
         });
     }
 }
 
-// Middleware para compra de tickets:
-// No permite comprar tickets de eventos cancelados ni que el organizador compre de su propio evento
+
 export async function ticketPermition(req, res, next) {
     try {
-        const event = await eventModel.findById(req.params.eid);
+        const eventId = req.params.eid || req.params.id;
+        if (!Types.ObjectId.isValid(eventId)) {
+            return res.status(404).json({
+                status: "error",
+                message: "Evento no encontrado"
+            });
+        }
+
+        const event = await eventModel.findById(eventId);
 
         if (!event) {
             return res.status(404).json({

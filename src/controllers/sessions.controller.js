@@ -30,11 +30,11 @@ export async function loginController(req, res) {
     // Generamos el token
     const token = generateToken(tokenUser);
 
-    // Establecemos la cookie y le pasamos el token
+    
     res.cookie("Este_es_el_nombre_de_la_cookie", token, {
-        maxAge: 60 * 60 * 1000, // El tiempo está expresado en milisegundos, resultando en 1 hora.
-        httpOnly: true,         // La cookie no es accesible via JavaScript (protección XSS)
-        signed: true            // La cookie está firmada (protección contra manipulación)
+        maxAge: 60 * 60 * 1000, 
+        httpOnly: true,         
+        signed: true            
     })
 
     // Enviamos la respuesta

@@ -5,7 +5,7 @@ import { rolesPermition } from "../middlewares/authorize.middleware.js";
 
 const router = Router();
 
-// Rutas administrativas: requieren sesión (401) y rol admin (403)
+
 router.use(authMiddleware, rolesPermition(["admin"]));
 
 router.get("/", getAll);
