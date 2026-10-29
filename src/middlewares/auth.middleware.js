@@ -1,19 +1,19 @@
-export const authorizeRoles = (...allowedRoles) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        status: "error",
-        message: "Usuario no autenticado"
-      });
-    }
+import passport from "passport";
 
-    if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({
-        status: "error",
-        message: "No tenés permisos para realizar esta acción"
-      });
-    }
-
-    next();
-  };
+// Middleware de autenticación: valida el JWT de la cookie mediante la estrategia "current"
+// Responde 401 si no hay sesión válida y puebla req.user si es válida
+export const authMiddleware = (req, res, next) => {
+    passport.authenticate("current", { session: false }, (err, user) => {
+        if (err) {
+            return next(err);
+        }
+        if (!user) {
+            return res.status(401).json({
+                status: "error",
+                message: "No autenticado"
+            });
+        }
+        req.user = user;
+        next();
+    })(req, res, next);
 };

@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { registerController, loginController, logoutController,  currentController } from "../controllers/sessions.controller.js";
+import { registerController, loginController, logoutController, currentController } from "../controllers/sessions.controller.js";
 import passport from "passport";
+import { authMiddleware } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
@@ -8,7 +9,7 @@ router.post("/register", passport.authenticate("register", { session: false }), 
 
 router.post("/login", passport.authenticate("login", { session: false }), loginController);
 
-router.get("/current", passport.authenticate("current", { session: false }), currentController);
+router.get("/current", authMiddleware, currentController);
 
 router.delete("/logout", logoutController);
 

@@ -1,23 +1,22 @@
 import { Router } from "express";
 import { getAll, createEvent, getById, updateEvent, deleteEvent } from "../controllers/event.controller.js";
-import passport from "passport";
-import { rolesPermition } from "../middlewares/authorize.middleware.js";
+import { authMiddleware } from "../middlewares/auth.middleware.js";
+import { rolesPermition, ensureEventOwnerOrAdmin } from "../middlewares/authorize.middleware.js";
 
 const router = Router();
 
-router.use(passport.authenticate("current", { session: false }));
+// Todas las rutas de eventos requieren sesión válida (401 si no hay sesión)
+router.use(authMiddleware);
 
-router.get ("/",  getAll);
-router.get ("/:eid", getById);
+// Consultar eventos: permitido para user, organizer y admin
+router.get("/", getAll);
+router.get("/:eid", getById);
 
-router.use(rolesPermition(["organizer", "admin"]));
-//usar validacion de fecha para que no se pueda crear un evento con fecha pasada
-//vaidación de organizador no pueda editar o eliminar un evento que no sea suyo
+// Crear evento: solo organizer o admin (403 si es user)
+router.post("/", rolesPermition(["organizer", "admin"]), createEvent);
 
-
-router.post ("/", createEvent);
-router.put ("/:eid", updateEvent);
-router.delete ("/:eid", deleteEvent);
-
+// Modificar o eliminar evento: solo organizer (dueño del evento) o admin (cualquier evento)
+router.put("/:eid", rolesPermition(["organizer", "admin"]), ensureEventOwnerOrAdmin, updateEvent);
+router.delete("/:eid", rolesPermition(["organizer", "admin"]), ensureEventOwnerOrAdmin, deleteEvent);
 
 export default router;
